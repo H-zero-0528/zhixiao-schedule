@@ -108,6 +108,9 @@ body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 .infobar { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 18px 10px; }
 .chip { background: var(--card); border: 1px solid var(--line); border-radius: 999px;
        padding: 4px 12px; font-size: 12.5px; color: var(--text); }
+.chip.clickable { cursor: pointer; transition: border-color .15s, color .15s, background .15s; }
+.chip.clickable:hover { border-color: var(--accent); color: var(--accent-d); background: #fffaf6; }
+.chip.clickable:active { background: var(--accent-bg); }
 .chip.warn { background: var(--yellow-bg); border-color: #eed9b0; color: #8a5b00; }
 .chip.danger { background: #fdecec; border-color: #f3c1c1; color: var(--red); font-weight: 600; }
 .chip.okchip { background: var(--green-bg); border-color: #bfe3c8; color: #1e6b34; }
@@ -273,6 +276,24 @@ body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 /* 桌面端隐藏窄屏专用"＋"按钮（窄屏媒体查询里显示） */
 #tb-plus { display: none; }
 
+/* 窄屏"主任务"入口与底部抽屉：桌面端不显示，不参与桌面布局 */
+#tb-mains { display: none; }
+.mains-sheet { position: fixed; inset: 0; z-index: 30; background: rgba(45, 42, 38, .34);
+               display: flex; align-items: flex-end; }
+.msheet { width: 100%; max-height: 72vh; overflow: auto; background: var(--card);
+          border-radius: 16px 16px 0 0; padding: 12px 16px 20px;
+          box-shadow: 0 -4px 18px rgba(90, 60, 30, .16); }
+.msheet-head { display: flex; align-items: center; justify-content: space-between;
+               font-size: 14.5px; font-weight: 700; }
+.msheet-head button { border: none; background: none; font-size: 17px; color: var(--sub);
+                      cursor: pointer; padding: 0 4px; }
+.msheet-sub { font-size: 11.5px; color: var(--faint); margin: 2px 0 8px; }
+#mains-sheet-list { list-style: none; }
+#mains-sheet-list .mline { font-size: 13.5px; padding: 11px 4px;
+                           border-bottom: 1px solid var(--line2); border-radius: 0; }
+#mains-sheet-list .mline:last-child { border-bottom: none; }
+#mains-sheet-list .mempty { padding: 8px 4px; }
+
 @media (max-width: 860px) {
   .sidebar { width: 62px; min-width: 62px; }
   .sidebar .bt, .sidebar .pool, .sidebar .shead, .sidebar .snav button span,
@@ -292,6 +313,8 @@ body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   .qa-hint { font-size: 11px; }
   /* 窄侧栏"导入schedule.json"按钮图标可见可点（保留 ⬆） */
   .sidebar .snav button { padding: 9px 0; font-size: 15px; }
+  /* 窄屏侧栏显示"主任务"入口图标 */
+  #tb-mains { display: flex; }
 }
 
 
@@ -337,6 +360,7 @@ body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
       <button id="tb-clear" type="button" title="删除本页全部任务，从空日程重新开始">🗑 <span>清空全部任务</span></button>
       <button id="tb-reset" type="button" title="载入内置示例日程（作者大一上真实课业，会覆盖当前内容）">🎮 <span>载入示例日程</span></button>
       <input type="file" id="tb-file" accept=".json,application/json" style="display:none">
+      <button id="tb-mains" type="button" title="主任务 DDL 列表（点一条跳到对应月）">📌 <span>主任务（点可跳转 DDL）</span></button>
       <div class="shead">主任务（点可跳转 DDL）</div>
       <ul id="mainlist"></ul>
     </div>
@@ -373,6 +397,13 @@ body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
     <div id="panel-g"></div>
     <div class="p-note">在网页里改动后，点左侧「📤 把网页的改动同步给AI」把文件发回 AI，对话端日程会以它为准合并更新。</div>
   </aside>
+</div>
+<div class="mains-sheet" id="mains-sheet" style="display:none">
+  <div class="msheet">
+    <div class="msheet-head"><span>📌 主任务 DDL</span><button id="msheet-close" type="button" title="关闭">✕</button></div>
+    <div class="msheet-sub">点一条 → 日历跳到该月并自动收起</div>
+    <ul id="mains-sheet-list"></ul>
+  </div>
 </div>
 <div class="overlay" id="overlay" style="display:none">
   <div class="modal">
@@ -537,20 +568,32 @@ body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
     var chips = [];
     overdue.sort(function (a, b) { return b.days_overdue - a.days_overdue; });
     overdue.forEach(function (o) {
-      chips.push('<span class="chip danger">🔴 ' + esc(o.name) + ' 已逾期' + o.days_overdue + '天</span>');
+      chips.push('<span class="chip danger clickable" data-iso="' + o.ddl + '">🔴 ' + esc(o.name) + ' 已逾期' + o.days_overdue + '天</span>');
     });
     items.forEach(function (it) {
-      if (it.days_left === 0) chips.push('<span class="chip danger">🔴 ' + esc(it.name) + ' 今天截止</span>');
+      if (it.days_left === 0) chips.push('<span class="chip danger clickable" data-iso="' + it.ddl + '">🔴 ' + esc(it.name) + ' 今天截止</span>');
     });
     items.sort(function (a, b) { return a.days_left - b.days_left; });
     items.forEach(function (it) {
-      if (it.days_left > 0) chips.push('<span class="chip">' + esc(it.name) + ' 还剩' + it.days_left + '天</span>');
+      if (it.days_left > 0) chips.push('<span class="chip clickable" data-iso="' + it.ddl + '">' + esc(it.name) + ' 还剩' + it.days_left + '天</span>');
     });
     if (!chips.length) {
       list.innerHTML = '<span class="chip okchip">🎉 暂无待办 DDL</span>';
     } else {
       list.innerHTML = chips.slice(0, 5).join(" ");
     }
+    /* 点倒计时里的任务 → 日历跳到该任务 DDL 所在月，并把那一天滚进可视区 */
+    list.querySelectorAll(".chip[data-iso]").forEach(function (el) {
+      el.setAttribute("title", "点击跳到 " + el.getAttribute("data-iso"));
+      el.addEventListener("click", function () {
+        var isoStr = el.getAttribute("data-iso") || "";
+        if (!parseD(isoStr)) return;
+        currentView = "cal"; saveView();
+        navIso = isoStr;
+        render();
+        scrollToNavMonth(isoStr);
+      });
+    });
     var wrap = document.getElementById("cd-block");
     if (wrap) wrap.style.display = "";
   }
@@ -612,21 +655,28 @@ body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
       if (da && db) return da - db;
       return 0;
     });
-    document.getElementById("mainlist").innerHTML = mainsSorted.length
+    var mainsHtml = mainsSorted.length
       ? mainsSorted.map(function (x) {
           var dd = iso(parseD(x.ddl) || parseD(x.date) || new Date());
-          return '<li class="mline' + (x.done ? " done" : "") + '"><span class="ddl">●</span> <span class="mname" title="' + esc(x.name) + '">' + esc(x.name) + '</span>' +
+          return '<li class="mline' + (x.done ? " done" : "") + '" data-iso="' + dd + '"><span class="ddl">●</span> <span class="mname" title="' + esc(x.name) + '">' + esc(x.name) + '</span>' +
             '<span class="mddl">' + dd.slice(5) + "</span></li>";
         }).join("")
       : '<li class="mempty">还没有主任务（截图/对话导入后出现）</li>';
-    document.querySelectorAll("#mainlist .mline").forEach(function (el) {
-      el.addEventListener("click", function () {
-        var dd = el.querySelector(".mddl").textContent;
-        var y = (parseD(navIso) || new Date()).getFullYear();
-        currentView = "cal"; saveView();
-        navIso = y + "-" + dd;
-        render();
-        main.scrollTop = 0;
+    document.getElementById("mainlist").innerHTML = mainsHtml;
+    var sheetList = document.getElementById("mains-sheet-list");
+    if (sheetList) sheetList.innerHTML = mainsHtml;   // 窄屏抽屉复用同一份列表
+    ["#mainlist", "#mains-sheet-list"].forEach(function (sel) {
+      document.querySelectorAll(sel + " .mline").forEach(function (el) {
+        el.addEventListener("click", function () {
+          // 用该条自带完整日期（data-iso，含年份），不用 navIso 拼年份
+          var isoStr = el.getAttribute("data-iso") || "";
+          if (!parseD(isoStr)) return;
+          currentView = "cal"; saveView();
+          navIso = isoStr;
+          render();
+          closeMainsSheet();
+          scrollToNavMonth(isoStr);
+        });
       });
     });
 
@@ -1027,17 +1077,46 @@ body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   }
   document.getElementById("vs-cal-tb").addEventListener("click", function () { setView("cal"); });
   document.getElementById("vs-day-tb").addEventListener("click", function () { setView("day"); });
+  /* 月定位（"今天"按钮与主任务跳转共用）：
+     渲染时月份从 navIso-1 开始（off=-1..25），data-mid="0" 即 navIso 所在月，
+     把视口对齐到它的顶部；传入 targetIso 时再保证该日格子落在可视区内。 */
+  function scrollToNavMonth(targetIso) {
+    var main = document.getElementById("main-scroll");
+    var m0 = main.querySelector('section.month[data-mid="0"]');
+    if (!m0) return;
+    var mr = m0.getBoundingClientRect(), cr = main.getBoundingClientRect();
+    main.scrollTop = Math.max(0, main.scrollTop + (mr.top - cr.top));
+    if (!targetIso) return;
+    var cell = main.querySelector('.cell.in[data-date="' + targetIso + '"]');
+    if (!cell) return;
+    var wd = main.querySelector(".wdhead");
+    var headH = wd ? wd.getBoundingClientRect().height : 0;
+    var r = cell.getBoundingClientRect(), c = main.getBoundingClientRect();
+    var topLimit = c.top + headH, bottomLimit = c.top + c.height;
+    if (r.bottom > bottomLimit) main.scrollTop += (r.bottom - bottomLimit) + 8;
+    else if (r.top < topLimit) main.scrollTop += (r.top - topLimit);
+  }
+  /* 窄屏"主任务"抽屉开关（桌面端按钮不显示，逻辑不影响桌面） */
+  function openMainsSheet() {
+    var sh = document.getElementById("mains-sheet");
+    if (sh) sh.style.display = "flex";
+  }
+  function closeMainsSheet() {
+    var sh = document.getElementById("mains-sheet");
+    if (sh) sh.style.display = "none";
+  }
+  var _tbMains = document.getElementById("tb-mains");
+  if (_tbMains) _tbMains.addEventListener("click", openMainsSheet);
+  var _msClose = document.getElementById("msheet-close");
+  if (_msClose) _msClose.addEventListener("click", closeMainsSheet);
+  var _msheet = document.getElementById("mains-sheet");
+  if (_msheet) _msheet.addEventListener("click", function (e) { if (e.target === _msheet) closeMainsSheet(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeMainsSheet(); });
+
   document.getElementById("btn-today").addEventListener("click", function () {
     navIso = todayStr(); render();
     // 导航目标月对齐：滚动到 data-mid="0"（navIso 所在月）顶部，避免首屏停在 navIso-1 月
-    var main = document.getElementById("main-scroll");
-    var m0 = main.querySelector('section.month[data-mid="0"]');
-    var to = 0;
-    if (m0) {
-      var mr = m0.getBoundingClientRect(), cr = main.getBoundingClientRect();
-      to = main.scrollTop + (mr.top - cr.top);
-    }
-    main.scrollTop = Math.max(0, to);
+    scrollToNavMonth();
   });
   document.getElementById("btn-prev").addEventListener("click", function () { shiftMonth(-1); });
   document.getElementById("btn-next").addEventListener("click", function () { shiftMonth(1); });
